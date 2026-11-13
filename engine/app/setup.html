@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>MEGA ERP - Setup</title>
+<style>
+body{font:15px Segoe UI,Arial;margin:0;background:#f4f6f8;color:#1b2b34}
+.w{padding:18px 24px}h1{font-size:20px;margin:0 0 4px;color:#0f5c4d}p.s{margin:0 0 14px;color:#566}
+.card{background:#fff;border:2px solid #dde4e8;border-radius:10px;padding:12px 14px;margin-bottom:10px;cursor:pointer}
+.card.on{border-color:#0f5c4d;background:#eef7f4}.card b{display:block;font-size:16px}.card span{color:#566;font-size:13px}
+.box{background:#fff;border:1px solid #dde4e8;border-radius:10px;padding:12px 14px;margin:10px 0;display:none}
+label{display:block;margin:8px 0 3px;font-weight:600;font-size:13px}input{width:100%;box-sizing:border-box;font-size:15px;padding:7px;border:1px solid #bcc7cd;border-radius:6px}
+.r{display:flex;gap:8px}.r input{flex:1}button{font-size:15px;padding:7px 16px;border:0;border-radius:6px;background:#0f5c4d;color:#fff;cursor:pointer}
+button.g{background:#6b7a82}.hint{font-size:12.5px;color:#566;margin-top:4px}.ip{font:700 18px Consolas,monospace;color:#0f5c4d}
+#msg{margin:8px 0;font-weight:600}.ok{color:#0a7a3d}.er{color:#b00020}.foot{text-align:right;margin-top:12px}
+</style></head><body><div class="w">
+<h1>MEGA ERP - Setup</h1><p class="s">How will this computer be used? (You can open this screen again later with Ctrl+Shift+F9.)</p>
+<div class="card" data-m="single"><b>1. Only one computer</b><span>Only this computer will use the software in this pharmacy.</span></div>
+<div class="card" data-m="server"><b>2. This is the MAIN computer</b><span>The data stays on this computer. Other computers connect to it. This computer must stay switched on all day.</span></div>
+<div class="card" data-m="client"><b>3. This is a SECOND computer</b><span>The data comes from the main computer. Bills, stock and accounts look exactly the same on both computers.</span></div>
+
+<div class="box" id="bData"><label>Where should the data be saved? (Do not use the C: drive - the data is lost if Windows is reinstalled)</label>
+<div class="r"><input id="dir"><button class="g" id="br">Choose folder</button></div>
+<div class="hint" id="dh"></div></div>
+
+<div class="box" id="bServer"><label>Address of this computer (enter this on the second computer)</label><div class="ip" id="ips">-</div>
+<div class="r"><div style="flex:1"><label>Port</label><input id="sport" type="number"></div><div style="flex:1"><label>Pairing code</label><input id="scode"></div></div>
+<div class="hint">On the second computer, enter this same address and code in Setup. If Windows Firewall asks for permission, click "Yes / Allow". It is better to keep this computer's IP fixed (give this computer a fixed IP in the router).</div></div>
+
+<div class="box" id="bClient"><label>Address (IP) of the main computer</label><input id="host" placeholder="for example 192.168.1.10">
+<div class="r"><div style="flex:1"><label>Port</label><input id="cport" type="number"></div><div style="flex:1"><label>Pairing code</label><input id="ccode"></div></div>
+<div style="margin-top:10px"><button id="test" class="g">Connection test</button></div>
+<div class="hint">If this computer already has old data, it will not be used - only the main computer's data will be used.</div></div>
+
+<div id="msg"></div>
+<div class="foot"><button class="g" id="cancel">Cancel</button> <button id="save">Save and reopen the software</button></div>
+</div>
+<script>
+const {ipcRenderer}=require('electron');const $=i=>document.getElementById(i);let M='single',INFO=null;
+function show(){document.querySelectorAll('.card').forEach(c=>c.classList.toggle('on',c.dataset.m===M));
+ $('bData').style.display=M==='client'?'none':'block';$('bServer').style.display=M==='server'?'block':'none';$('bClient').style.display=M==='client'?'block':'none';$('msg').textContent=''}
+document.querySelectorAll('.card').forEach(c=>c.onclick=()=>{M=c.dataset.m;show()});
+(async()=>{INFO=await ipcRenderer.invoke('setup-info');const c=INFO.cfg;M=c.mode||'single';
+ $('dir').value=c.dataDir||'';$('sport').value=c.port||8765;$('scode').value=c.code||'';$('cport').value=c.port||8765;$('ccode').value=c.mode==='client'?(c.code||''):'';$('host').value=c.host||'';
+ $('ips').textContent=INFO.ips.length?INFO.ips.join('   /   '):'(no network found)';
+ $('dh').textContent=INFO.drives.length?'Drives on this computer: '+INFO.drives.join('  '):'';
+ if(!INFO.first)$('save').textContent='Save and reopen the software';show()})();
+$('br').onclick=async()=>{const p=await ipcRenderer.invoke('setup-browse');if(p)$('dir').value=p};
+$('cancel').onclick=()=>window.close();
+const say=(t,ok)=>{$('msg').textContent=t;$('msg').className=ok?'ok':'er'};
+$('test').onclick=async()=>{say('Testing...',true);const r=await ipcRenderer.invoke('setup-test',$('host').value.trim(),$('cport').value,$('ccode').value.trim());
+ r.ok?say('Connection is OK'+(r.has?' (the main computer has data).':' (the main computer is empty for now).'),true):say('Could not connect: '+r.err+' - check the address, code and firewall.',false)};
+$('save').onclick=async()=>{
+ const c={mode:M};
+ if(M==='client'){c.host=$('host').value.trim();c.port=+$('cport').value||8765;c.code=$('ccode').value.trim();if(!c.host||!c.code)return say('Enter the address and code of the main computer.',false);
+  const r=await ipcRenderer.invoke('setup-test',c.host,c.port,c.code);if(!r.ok)return say('Could not connect to the main computer ('+r.err+'). Fix the connection first.',false)}
+ else{c.dataDir=$('dir').value.trim();if(!c.dataDir)return say('Choose a data folder.',false);
+  if(/^c:/i.test(c.dataDir)&&!window.__w){window.__w=1;return say('The data will be on the C: drive - it is lost if Windows is reinstalled. To keep it there anyway, click Save again; otherwise choose a folder on the D: drive or another drive.',false)}
+  if(M==='server'){c.port=+$('sport').value||8765;c.code=$('scode').value.trim();if(c.code.length<4)return say('The pairing code must be at least 4 letters/numbers.',false)}
+  else{c.port=8765;c.code=''}}
+ say('Saving...',true);const r=await ipcRenderer.invoke('setup-save',c);
+ r.ok?say('Done. The software is reopening...',true):say('Could not save: '+r.err,false)};
+</script></body></html>
