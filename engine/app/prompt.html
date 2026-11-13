@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>MEGA ERP</title>
+<style>body{font:15px Arial;margin:0;padding:16px;background:#f4f6f8}#m{white-space:pre-wrap;margin-bottom:10px;max-height:170px;overflow:auto}input{width:100%;box-sizing:border-box;font-size:16px;padding:8px}
+.r{text-align:right;margin-top:12px}button{font-size:15px;padding:7px 22px;margin-left:8px}</style></head>
+<body><div id="m"></div><input id="v"><div class="r"><button id="ok">OK</button><button id="no">Cancel</button></div>
+<script>
+const {ipcRenderer}=require('electron');
+let T='prompt';
+ipcRenderer.on('init',(e,type,msg,def)=>{T=type;document.getElementById('m').textContent=msg;const v=document.getElementById('v');
+ if(type==='prompt'){v.value=def||'';v.focus();v.select()}else{v.style.display='none';document.getElementById('ok').focus()}
+ if(type==='alert')document.getElementById('no').style.display='none'});
+const done=x=>ipcRenderer.send('prompt-result',x);
+document.getElementById('ok').onclick=()=>done(T==='prompt'?document.getElementById('v').value:true);
+document.getElementById('no').onclick=()=>done(T==='prompt'?null:false);
+document.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('ok').click()}if(e.key==='Escape')(T==='alert'?document.getElementById('ok'):document.getElementById('no')).click()});
+</script></body></html>
