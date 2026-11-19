@@ -75,32 +75,58 @@ return{capture,picPage,runPrint};
 /*V117_PRN_END*/
 
 /*V126_BACKUP_BEGIN*/
-/* v126 DAILY BACKUP: a copy of the data is saved once a day (and refreshed while the software runs and when it is closed) in the folder "MEGA ERP Backup"
-   on the DRIVE WHERE THE SOFTWARE IS INSTALLED (for example C:\MEGA ERP Backup). If Windows does not allow that folder, C:\ProgramData\RehmanPharma\MEGA ERP Backup is used.
+/* v126 DAILY BACKUP: a copy of the data is saved once a day (and refreshed while the software runs and when it is closed).
    File: pharmacy-backup-YYYY-MM-DD.json (restore it with the normal Restore button). Only the main / single computer has the data, a client computer saves nothing.
-   Files older than KEEP_DAYS days are removed. A log is written to backup.log in C:\ProgramData\RehmanPharma. */
+   v130: the owner / admin can CHOOSE the backup folder himself (Backup / Restore > Auto Backup > Choose folder). The choice is kept in
+   C:\ProgramData\RehmanPharma\backup-folder.json (a separate small file, so Setup never erases it).
+   If no folder is chosen (or the chosen folder cannot be written, for example a USB stick that is removed), the old default is used so a backup is never skipped:
+   folder "MEGA ERP Backup" on the DRIVE WHERE THE SOFTWARE IS INSTALLED (C:\MEGA ERP Backup), else C:\ProgramData\RehmanPharma\MEGA ERP Backup.
+   Files older than KEEP_DAYS days (only files named pharmacy-backup-YYYY-MM-DD.json) are removed. A log is written to backup.log in C:\ProgramData\RehmanPharma. */
 (function(){
-const KEEP_DAYS=90,FOLDER="MEGA ERP Backup",pad=n=>String(n).padStart(2,"0");
-let lastBlob=null;
+const KEEP_DAYS=90,FOLDER="MEGA ERP Backup",CFGF=c.join(b,"backup-folder.json"),pad=n=>String(n).padStart(2,"0");
+let lastBlob=null,last={ok:null,time:"",file:"",dir:"",fallback:!1,msg:""};
 const today=()=>{const x=new Date();return x.getFullYear()+"-"+pad(x.getMonth()+1)+"-"+pad(x.getDate())};
+const stamp=()=>{const x=new Date();return x.getFullYear()+"-"+pad(x.getMonth()+1)+"-"+pad(x.getDate())+" "+pad(x.getHours())+":"+pad(x.getMinutes())};
 function blog(msg){try{const f=c.join(b,"backup.log");let o="";try{o=u.readFileSync(f,"utf8")}catch{}if(o.length>60000)o=o.slice(-30000);u.writeFileSync(f,o+new Date().toISOString()+"  "+msg+"\n")}catch{}}
+function chosen(){try{const o=JSON.parse(u.readFileSync(CFGF,"utf8"));return o&&typeof o.dir==="string"?o.dir:""}catch{return""}}
+function setChosen(dir){try{if(dir)u.writeFileSync(CFGF,JSON.stringify({dir:dir},null,1));else{try{u.unlinkSync(CFGF)}catch{}}return!0}catch(er){blog("cannot save backup-folder.json: "+(er&&er.message||er));return!1}}
+function canWrite(dir){try{u.mkdirSync(dir,{recursive:!0});const t=c.join(dir,".w");u.writeFileSync(t,"1");u.unlinkSync(t);return!0}catch(er){blog("cannot use "+dir+": "+(er&&er.message||er));return!1}}
 function backupDir(){
+ const ch=chosen();last.fallback=!1;
+ if(ch){if(canWrite(ch))return ch;last.fallback=!0;blog("chosen backup folder is not available ("+ch+") - the default folder is used")}
  const list=[];
  if(process.platform==="win32")list.push(c.join(c.parse(process.execPath).root,FOLDER));
  list.push(c.join(b,FOLDER));
- for(const dir of list){try{u.mkdirSync(dir,{recursive:!0});const t=c.join(dir,".w");u.writeFileSync(t,"1");u.unlinkSync(t);return dir}catch(er){blog("cannot use "+dir+": "+(er&&er.message||er))}}
+ for(const dir of list){if(canWrite(dir))return dir}
  return null}
 function prune(dir){try{const lim=new Date();lim.setHours(0,0,0,0);lim.setDate(lim.getDate()-KEEP_DAYS);u.readdirSync(dir).forEach(n=>{const mm=/^pharmacy-backup-(\d{4}-\d\d-\d\d)\.json$/.exec(n);if(mm&&new Date(mm[1]+"T00:00:00")<lim){try{u.unlinkSync(c.join(dir,n))}catch{}}})}catch{}}
-function runBackup(){
+function runBackup(force){
  try{
-  if(!p||!p.blob)return;
-  const dir=backupDir();if(!dir)return;
+  if(!p||!p.blob){if(force===!0)last={ok:!1,time:stamp(),file:"",dir:"",fallback:!1,msg:a&&a.mode==="client"?"This is a client computer. The backup is made on the main computer.":"There is no data to save yet."};return last}
+  const dir=backupDir();
+  if(!dir){last={ok:!1,time:stamp(),file:"",dir:"",fallback:!1,msg:"No folder could be written. Choose another folder."};return last}
   const f=c.join(dir,"pharmacy-backup-"+today()+".json");
-  if(u.existsSync(f)&&p.blob===lastBlob)return;
+  if(force!==!0&&u.existsSync(f)&&p.blob===lastBlob)return last;
   const tmp=f+".tmp";u.writeFileSync(tmp,p.blob);u.renameSync(tmp,f);lastBlob=p.blob;
-  blog("saved "+f+" ("+p.blob.length+" bytes)");prune(dir)
- }catch(er){blog("backup failed: "+(er&&er.message||er))}}
+  last={ok:!0,time:stamp(),file:f,dir:dir,fallback:last.fallback,msg:""};
+  blog("saved "+f+" ("+p.blob.length+" bytes)"+(last.fallback?" [DEFAULT folder - the chosen folder is not available]":""));prune(dir)
+ }catch(er){last={ok:!1,time:stamp(),file:"",dir:"",fallback:!1,msg:String(er&&er.message||er)};blog("backup failed: "+(er&&er.message||er))}
+ return last}
+function info(){const ch=chosen();return{mode:a?a.mode:"single",chosen:ch,dataDir:a&&a.dataDir||"",keep:KEEP_DAYS,last:last}}
+l.handle("bk-info",()=>info());
+l.handle("bk-choose",async()=>{
+ try{
+  const r=await S.showOpenDialog(t&&!t.isDestroyed()?t:undefined,{title:"Choose the folder for the daily backup",properties:["openDirectory","createDirectory"]});
+  if(r.canceled||!r.filePaths||!r.filePaths[0])return Object.assign(info(),{cancelled:!0});
+  const dir=r.filePaths[0];
+  if(a&&a.dataDir&&c.resolve(dir).toLowerCase()===c.resolve(a.dataDir).toLowerCase())return Object.assign(info(),{error:"This is the folder where the software keeps its data. Choose a different folder (best: another drive or a USB stick)."});
+  if(!canWrite(dir))return Object.assign(info(),{error:"The software cannot write in this folder. Choose another folder."});
+  if(!setChosen(dir))return Object.assign(info(),{error:"The choice could not be saved. Try again."});
+  blog("backup folder chosen: "+dir);lastBlob=null;runBackup(!0);return info()
+ }catch(er){return Object.assign(info(),{error:String(er&&er.message||er)})}});
+l.handle("bk-reset",()=>{setChosen("");blog("backup folder: back to the default folder");lastBlob=null;runBackup(!0);return info()});
+l.handle("bk-now",()=>{runBackup(!0);return info()});
 d.whenReady().then(()=>{setTimeout(runBackup,20000);setInterval(runBackup,36e5)});
-d.on("before-quit",runBackup);
+d.on("before-quit",()=>runBackup());
 })();
 /*V126_BACKUP_END*/
