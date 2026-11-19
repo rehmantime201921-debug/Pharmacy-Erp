@@ -40,7 +40,7 @@ function runPrint(win,mode,dev,wMm,hMm,after){
   try{after&&after()}catch{}};
  try{win.webContents.print(op,end)}catch(er){end(!1,String(er&&er.message||er))}
 }
-function pageWin(file,cb){const w=new g({show:!1,focusable:!1,webPreferences:{devTools:!1}});w.loadFile(file);w.webContents.once("did-finish-load",()=>setTimeout(()=>cb(w),150));return w}
+function pageWin(file,cb){const w=new g({show:!1,focusable:!1,webPreferences:{devTools:!1}});w.loadFile(file);w.webContents.once("did-finish-load",()=>setTimeout(()=>cb(w),20));return w}
 /* picture methods: the receipt is drawn at about 203 dpi and printed as one picture, so the printer driver never has to draw text */
 function capture(html,wMm,hMm){
  return new Promise(res=>{
@@ -50,7 +50,7 @@ function capture(html,wMm,hMm){
   try{
    u.writeFileSync(f,html,"utf8");
    w=new g({show:!1,width:W,height:H,useContentSize:!0,webPreferences:{offscreen:!0,devTools:!1,zoomFactor:z}});
-   w.webContents.once("did-finish-load",()=>setTimeout(()=>{w.webContents.capturePage().then(img=>{const sz=img.getSize();fin(img.isEmpty()||sz.width<10?null:{png:img.toPNG(),w:sz.width,h:sz.height})}).catch(()=>fin(null))},600));
+   w.webContents.once("did-finish-load",()=>setTimeout(()=>{w.webContents.capturePage().then(img=>{const sz=img.getSize();fin(img.isEmpty()||sz.width<10?null:{png:img.toPNG(),w:sz.width,h:sz.height})}).catch(()=>fin(null))},250));
    w.loadFile(f);
    setTimeout(()=>fin(null),9000);
   }catch{fin(null)}
@@ -73,3 +73,34 @@ l.on("erp-print",(ev,o)=>{o=o||{};const m=(+o.m===2||+o.m===4)?2:1;runPrint({web
 return{capture,picPage,runPrint};
 })();
 /*V117_PRN_END*/
+
+/*V126_BACKUP_BEGIN*/
+/* v126 DAILY BACKUP: a copy of the data is saved once a day (and refreshed while the software runs and when it is closed) in the folder "MEGA ERP Backup"
+   on the DRIVE WHERE THE SOFTWARE IS INSTALLED (for example C:\MEGA ERP Backup). If Windows does not allow that folder, C:\ProgramData\RehmanPharma\MEGA ERP Backup is used.
+   File: pharmacy-backup-YYYY-MM-DD.json (restore it with the normal Restore button). Only the main / single computer has the data, a client computer saves nothing.
+   Files older than KEEP_DAYS days are removed. A log is written to backup.log in C:\ProgramData\RehmanPharma. */
+(function(){
+const KEEP_DAYS=90,FOLDER="MEGA ERP Backup",pad=n=>String(n).padStart(2,"0");
+let lastBlob=null;
+const today=()=>{const x=new Date();return x.getFullYear()+"-"+pad(x.getMonth()+1)+"-"+pad(x.getDate())};
+function blog(msg){try{const f=c.join(b,"backup.log");let o="";try{o=u.readFileSync(f,"utf8")}catch{}if(o.length>60000)o=o.slice(-30000);u.writeFileSync(f,o+new Date().toISOString()+"  "+msg+"\n")}catch{}}
+function backupDir(){
+ const list=[];
+ if(process.platform==="win32")list.push(c.join(c.parse(process.execPath).root,FOLDER));
+ list.push(c.join(b,FOLDER));
+ for(const dir of list){try{u.mkdirSync(dir,{recursive:!0});const t=c.join(dir,".w");u.writeFileSync(t,"1");u.unlinkSync(t);return dir}catch(er){blog("cannot use "+dir+": "+(er&&er.message||er))}}
+ return null}
+function prune(dir){try{const lim=new Date();lim.setHours(0,0,0,0);lim.setDate(lim.getDate()-KEEP_DAYS);u.readdirSync(dir).forEach(n=>{const mm=/^pharmacy-backup-(\d{4}-\d\d-\d\d)\.json$/.exec(n);if(mm&&new Date(mm[1]+"T00:00:00")<lim){try{u.unlinkSync(c.join(dir,n))}catch{}}})}catch{}}
+function runBackup(){
+ try{
+  if(!p||!p.blob)return;
+  const dir=backupDir();if(!dir)return;
+  const f=c.join(dir,"pharmacy-backup-"+today()+".json");
+  if(u.existsSync(f)&&p.blob===lastBlob)return;
+  const tmp=f+".tmp";u.writeFileSync(tmp,p.blob);u.renameSync(tmp,f);lastBlob=p.blob;
+  blog("saved "+f+" ("+p.blob.length+" bytes)");prune(dir)
+ }catch(er){blog("backup failed: "+(er&&er.message||er))}}
+d.whenReady().then(()=>{setTimeout(runBackup,20000);setInterval(runBackup,36e5)});
+d.on("before-quit",runBackup);
+})();
+/*V126_BACKUP_END*/
