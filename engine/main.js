@@ -99,7 +99,7 @@ function backupDir(){
  list.push(c.join(b,FOLDER));
  for(const dir of list){if(canWrite(dir))return dir}
  return null}
-function prune(dir){try{const lim=new Date();lim.setHours(0,0,0,0);lim.setDate(lim.getDate()-KEEP_DAYS);u.readdirSync(dir).forEach(n=>{const mm=/^pharmacy-backup-(\d{4}-\d\d-\d\d)\.json$/.exec(n);if(mm&&new Date(mm[1]+"T00:00:00")<lim){try{u.unlinkSync(c.join(dir,n))}catch{}}})}catch{}}
+function prune(dir){return;try{const lim=new Date();lim.setHours(0,0,0,0);lim.setDate(lim.getDate()-KEEP_DAYS);u.readdirSync(dir).forEach(n=>{const mm=/^pharmacy-backup-(\d{4}-\d\d-\d\d)\.json$/.exec(n);if(mm&&new Date(mm[1]+"T00:00:00")<lim){try{u.unlinkSync(c.join(dir,n))}catch{}}})}catch{}}
 function runBackup(force){
  try{
   if(!p||!p.blob){if(force===!0)last={ok:!1,time:stamp(),file:"",dir:"",fallback:!1,msg:a&&a.mode==="client"?"This is a client computer. The backup is made on the main computer.":"There is no data to save yet."};return last}
